@@ -1,0 +1,22 @@
+# 默认配置
+defaults:
+  - model: bert
+  - data: glue
+  - training: base
+  - _self_
+
+# 输出根目录配置
+# hydra:
+#   run:
+#     dir: ./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+# 实验信息
+experiment_name: text_classification
+description: "Text classification experiment"
+tags:
+  - nlp
+  - classification
+
+# 设备配置
+device: cuda
+distributed: false

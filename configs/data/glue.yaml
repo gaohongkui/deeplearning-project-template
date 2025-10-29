@@ -1,0 +1,11 @@
+# GLUE 数据集配置
+train_file: data/glue/train.jsonl
+validation_file: data/glue/val.jsonl
+test_file: data/glue/val.jsonl
+
+max_seq_length: 512
+batch_size: 32
+num_workers: 4
+
+preprocessing_num_workers: 4
+overwrite_cache: false
