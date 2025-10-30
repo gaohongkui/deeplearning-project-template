@@ -1,0 +1,33 @@
+# 推理配置文件
+#
+# 使用方式：
+#   方式1 - 纯命令行：
+#     python predict.py --checkpoint xxx --text "your text here"
+#   
+#   方式2 - 配置文件：
+#     python predict.py --config configs/predict.yaml
+#     注意：使用配置文件时，所有参数从配置文件读取，命令行参数将被忽略
+#
+# 建议：
+#   - 单个文本测试：使用命令行参数
+#   - 批量推理：使用配置文件
+
+# 检查点路径（必需）
+# tokenizer 会从检查点自动加载，无需单独指定
+checkpoint_path: outputs/2025-10-31/01-10-48/outputs/best_model
+
+# 输入方式（二选一）
+# 方式1：单个文本
+text: "This is a test sentence for prediction."
+
+# 方式2：批量文本文件（每行一个文本）
+# text_file: data/texts_to_predict.txt
+
+# 数据处理参数
+max_seq_length: 512
+
+# 设备配置
+device: cuda
+
+# 可选：保存预测结果到文件
+output_file: null  # 如需保存，设置为文件路径，如 "predictions.json"

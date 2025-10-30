@@ -9,6 +9,14 @@ wheels/
 # Virtual environments
 .venv
 
+# IDE
+.vscode/
+.idea/
+.cursor/
+.cursorrules
+.cursorignore
+
+
 # custom
 outputs/
 .ruff_cache/

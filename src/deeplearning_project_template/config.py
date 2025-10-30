@@ -6,7 +6,7 @@
 4. 在 __post_init__ 中验证
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Optional, List, Literal
 
 # ============ 类型定义 ============
@@ -21,6 +21,7 @@ class ModelConfig:
 
     # 基础参数
     model_type: str = "bert"
+    tokenizer_name: str = "bert-base-uncased"  # 与模型配套的 tokenizer
     hidden_size: int = 768
     num_hidden_layers: int = 12
     num_attention_heads: int = 12
@@ -45,6 +46,10 @@ class ModelConfig:
         if self.hidden_size <= 0:
             raise ValueError(f"hidden_size must be positive, got {self.hidden_size}")
 
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return asdict(self)
+
 
 # ============ 数据配置 ============
 @dataclass
@@ -66,11 +71,14 @@ class DataConfig:
     overwrite_cache: bool = False
 
     def __post_init__(self):
-        """验证文件是否存在"""
-        import os
+        """参数验证"""
+        if self.max_seq_length <= 0:
+            raise ValueError(
+                f"max_seq_length must be positive, got {self.max_seq_length}"
+            )
 
-        if not os.path.exists(self.train_file):
-            raise FileNotFoundError(f"Training file not found: {self.train_file}")
+        if self.batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {self.batch_size}")
 
 
 # ============ 训练配置 ============
@@ -92,7 +100,6 @@ class TrainingConfig:
     # 训练控制
     gradient_accumulation_steps: int = 1
     max_grad_norm: float = 1.0
-    fp16: bool = False
 
     # 评估和保存
     eval_steps: int = 500

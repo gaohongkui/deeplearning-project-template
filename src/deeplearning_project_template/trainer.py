@@ -9,6 +9,8 @@ from transformers import get_linear_schedule_with_warmup
 from tqdm import tqdm
 from loguru import logger
 from pathlib import Path
+import shutil
+import json
 
 from deeplearning_project_template.config import TrainingConfig
 from deeplearning_project_template.model import TransformerModel
@@ -27,20 +29,32 @@ class Trainer:
         model: TransformerModel,
         data_module: DataModule,
         config: TrainingConfig,
+        tokenizer,
+        device: str = "cuda",
     ):
         """
         Args:
             model: 模型实例
             data_module: 数据模块实例
             config: TrainingConfig 对象
+            tokenizer: 分词器实例
+            device: 设备配置（'cuda', 'cpu', 'mps' 等）
         """
         self.model = model
         self.data_module = data_module
         self.config = config
+        self.tokenizer = tokenizer
 
         # 设置设备
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device == "cuda" and not torch.cuda.is_available():
+            logger.warning("CUDA not available, falling back to CPU")
+            device = "cpu"
+        self.device = torch.device(device)
         self.model.to(self.device)
+
+        # 缓存 DataLoader，避免重复创建
+        self.train_dataloader = self.data_module.train_dataloader()
+        self.val_dataloader = self.data_module.val_dataloader()
 
         # 设置优化器
         self.optimizer = self._create_optimizer()
@@ -52,6 +66,7 @@ class Trainer:
         self.global_step = 0
         self.best_metric = float("-inf")
         self.patience_counter = 0
+        self.checkpoints = []  # 保存所有检查点路径，用于管理数量限制
 
     def _create_optimizer(self):
         """根据配置创建优化器"""
@@ -101,9 +116,8 @@ class Trainer:
     def _create_scheduler(self):
         """根据配置创建学习率调度器"""
 
-        train_dataloader = self.data_module.train_dataloader()
         num_training_steps = (
-            len(train_dataloader)
+            len(self.train_dataloader)
             * self.config.num_train_epochs
             // self.config.gradient_accumulation_steps
         )
@@ -161,8 +175,7 @@ class Trainer:
         self.model.train()
         total_loss = 0
 
-        train_dataloader = self.data_module.train_dataloader()
-        progress_bar = tqdm(train_dataloader, desc="Training")
+        progress_bar = tqdm(self.train_dataloader, desc="Training")
 
         for step, batch in enumerate(progress_bar):
             # 将数据移到设备
@@ -172,8 +185,6 @@ class Trainer:
             logits = self.model(
                 input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
             )
-
-            # 计算损失
             loss = nn.CrossEntropyLoss()(logits, batch["labels"])
 
             # 反向传播
@@ -197,13 +208,33 @@ class Trainer:
             total_loss += loss.item()
             progress_bar.set_postfix({"loss": loss.item()})
 
+            # 定期日志记录
+            if (
+                self.global_step > 0
+                and self.global_step % self.config.logging_steps == 0
+            ):
+                logger.info(
+                    f"Step {self.global_step}: loss={loss.item():.4f}, "
+                    f"lr={self.scheduler.get_last_lr()[0]:.2e}"
+                )
+
+            # 定期保存
+            if self.global_step > 0 and self.global_step % self.config.save_steps == 0:
+                # 临时评估以保存检查点
+                eval_metrics = self.evaluate()
+                logger.info(f"Step {self.global_step} evaluation: {eval_metrics}")
+                self._save_checkpoint(
+                    epoch=f"step-{self.global_step}", metrics=eval_metrics
+                )
+                self.model.train()
+
             # 定期评估
-            if self.global_step % self.config.eval_steps == 0:
+            if self.global_step > 0 and self.global_step % self.config.eval_steps == 0:
                 eval_metrics = self.evaluate()
                 logger.info(f"Step {self.global_step}: {eval_metrics}")
                 self.model.train()
 
-        return total_loss / len(train_dataloader)
+        return total_loss / len(self.train_dataloader)
 
     @torch.no_grad()
     def evaluate(self) -> dict:
@@ -214,9 +245,7 @@ class Trainer:
         correct = 0
         total = 0
 
-        val_dataloader = self.data_module.val_dataloader()
-
-        for batch in tqdm(val_dataloader, desc="Evaluating"):
+        for batch in tqdm(self.val_dataloader, desc="Evaluating"):
             batch = {k: v.to(self.device) for k, v in batch.items()}
 
             logits = self.model(
@@ -231,20 +260,33 @@ class Trainer:
             total += batch["labels"].size(0)
 
         accuracy = correct / total
-        avg_loss = total_loss / len(val_dataloader)
+        avg_loss = total_loss / len(self.val_dataloader)
 
         return {
             "eval_loss": avg_loss,
             "eval_accuracy": accuracy,
         }
 
-    def _save_checkpoint(self, epoch: int, metrics: dict):
-        """保存检查点"""
+    def _save_checkpoint(self, epoch, metrics: dict):
+        """保存检查点（包含模型、优化器、训练状态和模型配置）
+
+        Args:
+            epoch: epoch 编号或步数标识（如 "step-1000"）
+            metrics: 评估指标
+        """
         checkpoint_dir = Path(self.config.output_dir) / f"checkpoint-{epoch}"
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-        # 保存模型
+        # 保存模型权重
         torch.save(self.model.state_dict(), checkpoint_dir / "model.pt")
+
+        # 保存模型配置（用于重建模型）
+        model_config_dict = self.model.config.to_dict()
+        with open(checkpoint_dir / "model_config.json", "w", encoding="utf-8") as f:
+            json.dump(model_config_dict, f, indent=2, ensure_ascii=False)
+
+        # 保存 tokenizer
+        self.tokenizer.save_pretrained(checkpoint_dir / "tokenizer")
 
         # 保存优化器状态
         torch.save(self.optimizer.state_dict(), checkpoint_dir / "optimizer.pt")
@@ -261,6 +303,70 @@ class Trainer:
         )
 
         logger.info(f"Checkpoint saved to {checkpoint_dir}")
+
+        # 记录检查点路径
+        self.checkpoints.append(checkpoint_dir)
+
+        # 检查并保存最佳模型
+        current_metric = metrics.get("eval_accuracy", 0)
+        if current_metric > self.best_metric:
+            self._save_best_model(epoch, current_metric, metrics, model_config_dict)
+
+        # 清理旧检查点
+        self._cleanup_old_checkpoints()
+
+    def _save_best_model(
+        self, epoch, metric: float, metrics: dict, model_config_dict: dict
+    ):
+        """保存最佳模型
+
+        Args:
+            epoch: epoch 编号或步数标识
+            metric: 当前最佳指标值
+            metrics: 完整的评估指标
+            model_config_dict: 模型配置字典
+        """
+        best_model_dir = Path(self.config.output_dir) / "best_model"
+        best_model_dir.mkdir(parents=True, exist_ok=True)
+
+        # 保存模型权重
+        torch.save(self.model.state_dict(), best_model_dir / "model.pt")
+
+        # 保存模型配置
+        with open(best_model_dir / "model_config.json", "w", encoding="utf-8") as f:
+            json.dump(model_config_dict, f, indent=2, ensure_ascii=False)
+
+        # 保存 tokenizer
+        self.tokenizer.save_pretrained(best_model_dir / "tokenizer")
+
+        # 保存训练状态
+        torch.save(
+            {
+                "epoch": epoch,
+                "global_step": self.global_step,
+                "best_metric": metric,
+                "metrics": metrics,
+            },
+            best_model_dir / "trainer_state.pt",
+        )
+
+        logger.info(f"Best model saved to {best_model_dir} with accuracy: {metric:.4f}")
+
+    def _cleanup_old_checkpoints(self):
+        """清理超出限制的旧检查点"""
+        if self.config.save_total_limit is None:
+            return
+
+        if len(self.checkpoints) > self.config.save_total_limit:
+            # 保留最近的 save_total_limit 个检查点
+            old_checkpoints = self.checkpoints[: -self.config.save_total_limit]
+            self.checkpoints = self.checkpoints[-self.config.save_total_limit :]
+
+            # 删除旧检查点
+            for old_checkpoint in old_checkpoints:
+                if old_checkpoint.exists():
+                    shutil.rmtree(old_checkpoint)
+                    logger.info(f"Removed old checkpoint: {old_checkpoint}")
 
     def _check_early_stopping(self, metrics: dict) -> bool:
         """检查是否应该早停"""

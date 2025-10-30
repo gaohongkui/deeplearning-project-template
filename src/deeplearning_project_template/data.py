@@ -6,6 +6,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 import json
+from typing import Dict, Any
+from loguru import logger
 from deeplearning_project_template.config import DataConfig
 
 
@@ -31,10 +33,18 @@ class TextDataset(Dataset):
         with open(file_path, "r", encoding="utf-8") as f:
             self.data = [json.loads(line) for line in f]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """获取单个样本
+
+        Args:
+            idx: 样本索引
+
+        Returns:
+            包含 input_ids、attention_mask、labels 的字典
+        """
         item = self.data[idx]
 
         # 分词

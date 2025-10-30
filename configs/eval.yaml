@@ -1,0 +1,29 @@
+# 评估配置文件
+# 
+# 使用方式：
+#   方式1 - 纯命令行：
+#     python eval.py --checkpoint xxx --test_file yyy
+#   
+#   方式2 - 配置文件：
+#     python eval.py --config configs/eval.yaml
+#     注意：使用配置文件时，所有参数从配置文件读取，命令行参数将被忽略
+#
+# 建议：
+#   - 快速测试：使用命令行参数
+#   - 重复评估、批量任务：使用配置文件
+
+# 检查点路径（必需）
+checkpoint_path: outputs/2025-10-31/01-49-18/outputs/best_model
+
+# 测试数据文件（必需）
+test_file: data/glue/val.jsonl
+
+# 数据处理参数
+max_seq_length: 512
+batch_size: 32
+
+# 设备配置
+device: cuda
+
+# 是否保存预测结果
+save_predictions: false

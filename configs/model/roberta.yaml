@@ -1,0 +1,20 @@
+# RoBERTa 模型配置示例
+# 使用方式: python train.py model=roberta
+
+model_type: roberta
+tokenizer_name: roberta-base  # 与 RoBERTa 配套的 tokenizer
+
+# 模型结构参数
+hidden_size: 768
+num_hidden_layers: 12
+num_attention_heads: 12
+intermediate_size: 3072
+
+# Dropout 参数
+hidden_dropout_prob: 0.1
+attention_probs_dropout_prob: 0.1
+
+# 其他参数
+max_position_embeddings: 512
+vocab_size: 50265  # RoBERTa 的 vocab 大小，必须与 tokenizer 匹配
+

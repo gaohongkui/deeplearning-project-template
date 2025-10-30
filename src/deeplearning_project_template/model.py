@@ -4,6 +4,7 @@
 
 import torch
 import torch.nn as nn
+from typing import Optional
 from deeplearning_project_template.config import ModelConfig
 
 
@@ -33,7 +34,18 @@ class TransformerModel(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 2)
 
-    def forward(self, input_ids, attention_mask=None):
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """前向传播
+
+        Args:
+            input_ids: 输入 token IDs，形状 [batch_size, seq_length]
+            attention_mask: 注意力掩码，形状 [batch_size, seq_length]
+
+        Returns:
+            logits: 分类 logits，形状 [batch_size, num_classes]
+        """
         # 实现前向传播
         hidden_states = self.embeddings(input_ids)
         hidden_states = self.dropout(hidden_states)
@@ -71,7 +83,18 @@ class TransformerLayer(nn.Module):
         self.layernorm2 = nn.LayerNorm(config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, hidden_states, attention_mask=None):
+    def forward(
+        self, hidden_states: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """前向传播
+
+        Args:
+            hidden_states: 隐藏状态，形状 [batch_size, seq_length, hidden_size]
+            attention_mask: 注意力掩码，形状 [batch_size, seq_length]
+
+        Returns:
+            layer_output: 输出隐藏状态，形状 [batch_size, seq_length, hidden_size]
+        """
         # Self-attention
         attention_output = self.attention(hidden_states, attention_mask)
         hidden_states = self.layernorm1(hidden_states + attention_output)
@@ -109,7 +132,18 @@ class MultiHeadAttention(nn.Module):
         self.value = nn.Linear(hidden_size, hidden_size)
         self.dropout = nn.Dropout(dropout_prob)
 
-    def forward(self, hidden_states, attention_mask=None):
+    def forward(
+        self, hidden_states: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """多头注意力前向传播
+
+        Args:
+            hidden_states: 隐藏状态，形状 [batch_size, seq_length, hidden_size]
+            attention_mask: 注意力掩码，形状 [batch_size, seq_length]
+
+        Returns:
+            context_layer: 上下文向量，形状 [batch_size, seq_length, hidden_size]
+        """
         # 实现多头注意力
         batch_size, seq_length, hidden_size = hidden_states.size()
 
@@ -139,7 +173,8 @@ class MultiHeadAttention(nn.Module):
             # 重塑注意力掩码以匹配注意力分数的尺寸
             # attention_mask: [batch_size, seq_length] -> [batch_size, 1, 1, seq_length]
             attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
-            attention_scores = attention_scores + attention_mask
+            # 将 padding 位置（mask=0）填充为极小值，使得 softmax 后接近 0
+            attention_scores = attention_scores.masked_fill(attention_mask == 0, -1e9)
 
         attention_probs = torch.softmax(attention_scores, dim=-1)
         attention_probs = self.dropout(attention_probs)

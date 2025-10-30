@@ -1,7 +1,7 @@
 # GLUE 数据集配置
 train_file: data/glue/train.jsonl
 validation_file: data/glue/val.jsonl
-test_file: data/glue/val.jsonl
+test_file: null  # 如需测试集，请设置正确的路径
 
 max_seq_length: 512
 batch_size: 32
